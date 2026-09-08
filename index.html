@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flora — Restaurante de Flores</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">✿</span>
+    <div>
+      <h1>Flora</h1>
+      <p>Restaurante de flores</p>
+    </div>
+  </div>
+  <div class="userbox" id="userbox">
+    <button class="user-btn" id="user-btn" aria-haspopup="true" aria-expanded="false">
+      <span class="user-avatar" id="user-avatar">R</span>
+      <span class="user-name" id="user-name">Recepción</span>
+      <span class="user-caret">▾</span>
+    </button>
+    <div class="user-menu" id="user-menu" role="menu">
+      <button class="user-item is-active" data-view="recepcion">Recepción</button>
+      <button class="user-item" data-view="menu">Menú</button>
+      <button class="user-item" data-view="cocina">Cocina</button>
+      <button class="user-item" data-view="mozo1">Mozo 1</button>
+      <button class="user-item" data-view="mozo2">Mozo 2</button>
+      <button class="user-item" data-view="app">App virtual</button>
+      <button class="user-item" data-view="admin">Admin</button>
+      <div class="user-sep"></div>
+      <button class="user-item danger" id="reset-btn">↺ Resetear datos</button>
+    </div>
+  </div>
+
+</header>
+
+<main class="wrap">
+
+  <!-- RECEPCIÓN -->
+  <section class="view is-active" id="view-recepcion">
+    <div class="view-head head-row">
+      <div>
+        <h2>Tablet de recepción</h2>
+        <p>Capullo verde = mesa libre · Flor roja = mesa ocupada · Girasol dorado = reservada. Tocá una mesa para sentar o liberar; abajo podés reservar.</p>
+      </div>
+      <div class="clock" id="clock">
+        <span class="clock-time" id="clock-time">--:--</span>
+        <span class="clock-zone" id="clock-date">Buenos Aires</span>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="bud"></i> Libre</span>
+      <span><i class="bloom"></i> Ocupada</span>
+      <span><i class="sunflower"></i> Reservada</span>
+    </div>
+    <div class="table-grid" id="table-grid"></div>
+
+    <div class="card reserve">
+      <h3>Reservar mesa</h3>
+      <form id="reserva-form">
+        <label>Mesa
+          <select id="res-mesa"></select>
+        </label>
+        <label>Personas
+          <input id="res-personas" type="number" min="1" max="12" value="2" />
+        </label>
+        <label>Hora
+          <input id="res-hora" type="time" />
+        </label>
+        <button class="btn" type="submit">Reservar 🌻</button>
+      </form>
+      <p class="sillas-note" id="res-nota"></p>
+    </div>
+  </section>
+
+  <!-- MENÚ -->
+  <section class="view" id="view-menu">
+    <div class="view-head">
+      <h2>Menú virtual</h2>
+      <p>Los platos con flor suman puntos. Tocá el botón para confirmar el pedido. La flor de cerámica 🏺 es una experiencia aparte: no se puede pedir junto con comida.</p>
+    </div>
+    <div class="menu-bar">
+      <label>Mesa</label>
+      <select id="menu-mesa"></select>
+      <span class="pill" id="menu-rango"></span>
+    </div>
+    <div class="menu-list" id="menu-list"></div>
+    <div class="ticket" id="ticket"></div>
+  </section>
+
+  <!-- COCINA -->
+  <section class="view" id="view-cocina">
+    <div class="view-head">
+      <h2>Pantalla de cocina <span class="role">vista chef</span></h2>
+      <p>Comandas entrantes con su número de mesa. Cuando el plato sale, marcalo como listo.</p>
+    </div>
+    <div class="kds" id="kds-chef"></div>
+  </section>
+
+  <!-- MOZO -->
+  <section class="view" id="view-mozo">
+    <div class="view-head">
+      <h2>Pantalla del mozo <span class="role" id="mozo-role">mozo 1</span></h2>
+      <p id="mozo-desc">Qué retirar de cocina y a qué mesa llevarlo. Confirmá la entrega al dejar el pedido.</p>
+    </div>
+    <div class="kds" id="kds-mozo"></div>
+  </section>
+
+  <!-- ADMIN -->
+  <section class="view" id="view-admin">
+    <div class="view-head">
+      <h2>Panel de administración <span class="role">vista admin</span></h2>
+      <p>Los tres procesos del local: venta de infusiones y comidas, mantenimiento de stock y rendimiento de costos.</p>
+    </div>
+
+    <div class="card">
+      <h3>Venta de infusiones / comidas</h3>
+      <p class="muted small">Seguimiento del circuito por mesa. Se repite si el cliente pide más.</p>
+      <div class="flow-grid" id="admin-flujo"></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h3>Mantenimiento de stock</h3>
+      <p class="muted small">Revisar stock, detectar faltantes, pedir al proveedor y recibir mercadería.</p>
+      <table class="adm-table" id="admin-stock"></table>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h3>Rendimiento de costos</h3>
+      <p class="muted small">Costo de elaboración, precio de venta, ganancia y ajuste sugerido.</p>
+      <table class="adm-table" id="admin-costos"></table>
+      <div class="adm-totales" id="admin-totales"></div>
+    </div>
+  </section>
+
+
+  <!-- APP -->
+  <section class="view" id="view-app">
+    <div class="view-head">
+      <h2>App del comensal</h2>
+      <p>Cargá el código de tu cuenta para sumar puntos, subir de rango y desbloquear descuentos.</p>
+    </div>
+
+    <div class="app-grid">
+      <div class="card rank-card">
+        <div class="rank-flower" id="rank-flower">🌱</div>
+        <h3 id="rank-name">Semilla</h3>
+        <p class="muted" id="rank-desc"></p>
+        <div class="bar"><span id="rank-bar"></span></div>
+        <p class="muted small" id="rank-next"></p>
+        <p class="warn small" id="rank-decay"></p>
+      </div>
+
+      <div class="card">
+        <h3>Canjear código</h3>
+        <form id="code-form">
+          <input id="code-input" placeholder="FLOR-XXXX" autocomplete="off" />
+          <button class="btn" type="submit">Sumar puntos</button>
+        </form>
+        <p class="feedback" id="code-msg"></p>
+        <h4>Códigos pendientes</h4>
+        <ul class="codes" id="codes"></ul>
+      </div>
+
+      <div class="card missions">
+        <h3>Misiones de tu rango</h3>
+        <ul id="missions"></ul>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="script.js"></script>
+</body>
+</html>

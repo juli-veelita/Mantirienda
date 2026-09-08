@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Cafetería 3D — Recorrido Interactivo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Work+Sans:wght@400;500;600&display=swap');
+
+  :root{
+    --panel-bg: rgba(24,18,13,0.82);
+    --panel-border: rgba(201,143,78,0.35);
+    --accent: #c98f4e;
+    --ink: #f1e6d8;
+    --ink-dim: #b9ab9a;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; overflow:hidden; background:#0a0806; font-family:'Work Sans',sans-serif; }
+  #app{ position:relative; width:100vw; height:100vh; }
+  canvas{ display:block; }
+
+  #hud{
+    position:absolute; inset:0; pointer-events:none;
+    display:flex; flex-direction:column; justify-content:space-between;
+  }
+
+  #topbar{ display:flex; justify-content:space-between; align-items:flex-start; padding:22px 26px; }
+
+  #title{
+    font-family:'Cormorant Garamond', serif; font-style:italic; font-weight:600;
+    font-size:22px; color:var(--ink); letter-spacing:0.02em;
+    background:var(--panel-bg); border:1px solid var(--panel-border);
+    padding:8px 16px; border-radius:3px;
+  }
+
+  #zoneLabel{
+    font-size:12.5px; color:var(--ink-dim); background:var(--panel-bg);
+    border:1px solid var(--panel-border); padding:8px 14px; border-radius:3px;
+    min-width:170px; text-align:right;
+  }
+  #zoneLabel b{ color:var(--accent); font-weight:600; display:block; font-size:14px; margin-top:2px; }
+
+  #crosshair{
+    position:absolute; top:50%; left:50%; width:6px; height:6px;
+    margin:-3px 0 0 -3px; border-radius:50%;
+    background:rgba(241,230,216,0.8); box-shadow:0 0 4px rgba(0,0,0,0.6);
+  }
+
+  #startScreen{
+    position:absolute; inset:0; background:rgba(8,6,5,0.92);
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:all; cursor:pointer; text-align:center;
+    transition:opacity 0.5s ease;
+  }
+  #startScreen.hidden{ opacity:0; pointer-events:none; }
+  #startCard{
+    max-width:420px; padding:34px 38px; border:1px solid var(--panel-border);
+    background:linear-gradient(180deg, rgba(30,23,16,0.9), rgba(18,14,10,0.9));
+    border-radius:4px;
+  }
+  #startCard h1{
+    font-family:'Cormorant Garamond', serif; font-style:italic; font-weight:600;
+    color:var(--ink); font-size:30px; margin:0 0 6px;
+  }
+  #startCard p{ color:var(--ink-dim); font-size:13.5px; line-height:1.6; margin:14px 0; }
+  #startCard .keys{
+    display:flex; gap:10px; justify-content:center; margin:18px 0 6px; flex-wrap:wrap;
+  }
+  #startCard .key{
+    border:1px solid var(--panel-border); color:var(--accent); font-size:11.5px;
+    padding:5px 10px; border-radius:3px; background:rgba(201,143,78,0.08);
+  }
+  #startCard .go{
+    margin-top:16px; display:inline-block; color:#1a130c; background:var(--accent);
+    padding:9px 22px; border-radius:3px; font-size:13px; font-weight:600;
+  }
+
+  #bottombar{ display:flex; justify-content:center; padding-bottom:18px; }
+  #helpStrip{
+    font-size:11.5px; color:var(--ink-dim); background:var(--panel-bg);
+    border:1px solid var(--panel-border); padding:7px 16px; border-radius:3px;
+    display:flex; gap:16px;
+  }
+  #helpStrip span b{ color:var(--accent); }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div id="topbar">
+      <div id="title">Café — Recorrido Nocturno</div>
+      <div id="zoneLabel">ZONA ACTUAL<b id="zoneName">Entrada</b></div>
+    </div>
+    <div id="bottombar">
+      <div id="helpStrip">
+        <span><b>WASD</b> mover</span>
+        <span><b>Mouse</b> mirar</span>
+        <span><b>Shift</b> caminar despacio</span>
+        <span><b>ESC</b> liberar cursor</span>
+      </div>
+    </div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="startScreen">
+    <div id="startCard">
+      <h1>Bienvenido al café</h1>
+      <p>Un recorrido en primera persona por la cafetería: cocina, salón, venta de flores, mesas de cerámica y el túnel del fondo. El personal se mueve por su cuenta — meseros, cocineros, la recepcionista y quienes pintan macetas.</p>
+      <div class="keys">
+        <div class="key">W A S D</div>
+        <div class="key">MOUSE</div>
+        <div class="key">SHIFT</div>
+        <div class="key">ESC</div>
+      </div>
+      <div class="go">Click para entrar</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+/* ==========================================================================
+   CAFÉ 3D — estructura del archivo (comentado por módulo, un solo bundle):
+   1. CONFIG / CONSTANTES DE PLANO      -> mapea la imagen de referencia a unidades del mundo
+   2. NÚCLEO THREE (escena, cámara, renderer)
+   3. ILUMINACIÓN
+   4. SISTEMA DE COLISIONES (AABB planas en XZ)
+   5. CONSTRUCCIÓN DE ESCENA (paredes + mobiliario por zona, según la imagen)
+   6. CONTROLES DEL JUGADOR (mouse-look + WASD + colisión)
+   7. HUMANOIDES PROCEDURALES (geometría base para NPCs, sin assets externos)
+   8. SISTEMA DE ANIMACIÓN (ciclos de marcha / gestos por rol)
+   9. GRAFO DE NAVEGACIÓN Y NPCs (waypoints = navmesh simplificado, por zona)
+   10. BUCLE PRINCIPAL
+   ========================================================================== */
+
+/* ---------- 1. CONFIG / PLANO ----------
+   Mundo en metros. X: izquierda→derecha de la imagen. Z: fondo(0)→entrada(34).
+   Y: arriba. Las zonas siguen la disposición de la imagen de referencia:
+   cocina arriba-izq, salón central, venta de flores y cerámica a la izquierda,
+   baños y túnel a la derecha, recepción y accesos abajo-centro.
+*/
+const WORLD = { minX:0, maxX:46, minZ:0, maxZ:37 };
+
+const ZONES = [
+  { name:'Cocina',                minX:1,  maxX:15, minZ:1,  maxZ:12 },
+  { name:'Venta de Flores',       minX:1,  maxX:11, minZ:13, maxZ:19 },
+  { name:'Pinta tu Maceta',       minX:1,  maxX:11, minZ:19, maxZ:24 },
+  { name:'Rincón Lounge',         minX:1,  maxX:11, minZ:24, maxZ:30 },
+  { name:'Salón',                 minX:15, maxX:34, minZ:1,  maxZ:19 },
+  { name:'Pinta tu Maceta',       minX:16, maxX:28, minZ:11, maxZ:17 },
+  { name:'Baño 1',                minX:34.3, maxX:37.05, minZ:1, maxZ:5.3 },
+  { name:'Baño 2',                minX:37.05, maxX:39.8, minZ:1, maxZ:5.3 },
+  { name:'Rincón de Merienda',    minX:34, maxX:41, minZ:7,  maxZ:19 },
+  { name:'Túnel de Acceso y Exhibición', minX:39.8, maxX:46, minZ:1, maxZ:24 },
+  { name:'Recepción',             minX:16, maxX:27, minZ:24, maxZ:30 },
+  { name:'Rincón Lounge',         minX:29, maxX:40, minZ:24, maxZ:30 },
+  { name:'Entrada',               minX:15, maxX:28, minZ:30, maxZ:37 },
+];
+
+function zoneAt(x,z){
+  for(const zn of ZONES){ if(x>=zn.minX&&x<=zn.maxX&&z>=zn.minZ&&z<=zn.maxZ) return zn.name; }
+  return 'Cafetería';
+}
+
+/* ---------- 2. NÚCLEO THREE ---------- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a140f);
+scene.fog = new THREE.FogExp2(0x1a140f, 0.013);
+
+const camera = new THREE.PerspectiveCamera(68, innerWidth/innerHeight, 0.1, 200);
+const eyeHeight = 1.65;
+camera.position.set(21, eyeHeight, 33);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.4;
+document.getElementById('app').appendChild(renderer.domElement);
+
+window.addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------- 3. ILUMINACIÓN ----------
+   Atmósfera nocturna cálida: ambiente tenue + "luna" direccional fría suave
+   + guirnaldas de foquitos (esferas emisivas) + un puñado de PointLights
+   cálidos con parpadeo tipo vela para no saturar de luces reales. */
+scene.add(new THREE.HemisphereLight(0x445a78, 0x2a2018, 1.4));
+const moon = new THREE.DirectionalLight(0x9fb3d6, 0.5);
+moon.position.set(-20, 30, 10);
+scene.add(moon);
+const fill = new THREE.DirectionalLight(0xffd9ae, 0.35);
+fill.position.set(23, 25, 20);
+scene.add(fill);
+
+const flickerLights = [];
+function addWarmLight(x,y,z, intensity=0.9, distance=7, color=0xffb066){
+  // los valores base fueron pensados livianos; se escalan aquí para que el
+  // salón se sienta cálido y bien iluminado sin tocar cada llamado.
+  const realIntensity = intensity * 2.6;
+  const realDistance = distance * 1.7;
+  const l = new THREE.PointLight(color, realIntensity, realDistance, 1.5);
+  l.position.set(x,y,z);
+  scene.add(l);
+  flickerLights.push({ light:l, base:realIntensity, phase:Math.random()*10 });
+  return l;
+}
+function addBulb(x,y,z, scale=0.06){
+  const g = new THREE.SphereGeometry(scale, 8, 8);
+  const m = new THREE.MeshBasicMaterial({ color:0xffdca0 });
+  const s = new THREE.Mesh(g,m);
+  s.position.set(x,y,z);
+  scene.add(s);
+  return s;
+}
+
+/* ---------- 4. SISTEMA DE COLISIONES ----------
+   Cajas planas en XZ. El jugador y los NPC se tratan como círculos de
+   radio r; se prueba cada eje por separado para permitir "deslizar"
+   contra paredes y mobiliario, igual que en un shooter en primera persona. */
+const collidables = []; // {minX,maxX,minZ,maxZ}
+function registerCollider(x,z,w,d){
+  const c = { minX:x-w/2, maxX:x+w/2, minZ:z-d/2, maxZ:z+d/2 };
+  collidables.push(c);
+  return c;
+}
+function removeCollider(c){
+  const i = collidables.indexOf(c);
+  if(i>-1) collidables.splice(i,1);
+}
+function collides(x,z,r){
+  if(x-r<WORLD.minX || x+r>WORLD.maxX || z-r<WORLD.minZ || z+r>WORLD.maxZ) return true;
+  for(let i=0;i<collidables.length;i++){
+    const b = collidables[i];
+    if(x+r>b.minX && x-r<b.maxX && z+r>b.minZ && z-r<b.maxZ) return true;
+  }
+  return false;
+}
+let npcsRef = null; // se asigna más abajo, una vez creados los NPCs
+function blockedByPeople(x,z,r,skip){
+  if(!npcsRef) return false;
+  for(let i=0;i<npcsRef.length;i++){
+    const n = npcsRef[i];
+    if(n===skip) continue;
+    const p = n.human.group.position;
+    const rr = r + 0.32;
+    const dx = x-p.x, dz = z-p.z;
+    if(dx*dx+dz*dz < rr*rr) return true;
+  }
+  return false;
+}
+function tryMove(pos, dx, dz, r, skipNpc){
+  // Antes cada NPC también chocaba contra los demás NPCs (blockedByPeople).
+  // Cuando dos se cruzaban (típicamente meseros yendo y viniendo por la
+  // puerta de la cocina) se bloqueaban mutuamente para siempre: ninguno
+  // podía avanzar porque el otro le tapaba el paso, y viceversa — de ahí
+  // que quedaran "tildados" flotando y chocados uno contra el otro.
+  // Ahora solo el JUGADOR choca contra la gente (skipNpc viene undefined);
+  // entre sí, la gente puede superponerse un poco al pasar cerca, pero ya
+  // no se traba nunca.
+  const checkPeople = skipNpc === undefined;
+  if(!collides(pos.x+dx, pos.z, r) && (!checkPeople || !blockedByPeople(pos.x+dx, pos.z, r, skipNpc))) pos.x += dx;
+  if(!collides(pos.x, pos.z+dz, r) && (!checkPeople || !blockedByPeople(pos.x, pos.z+dz, r, skipNpc))) pos.z += dz;
+}
+
+/* ---------- 5. CONSTRUCCIÓN DE LA ESCENA ---------- */
+function makeStoneFloorTexture(){
+  const size = 512;
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#9c8a72'; ctx.fillRect(0,0,size,size);
+  const tile = size/6;
+  for(let y=0;y<6;y++){
+    for(let x=0;x<6;x++){
+      const shade = 145 + Math.floor(Math.random()*28) - 14;
+      ctx.fillStyle = `rgb(${shade+10},${shade-2},${shade-24})`;
+      ctx.fillRect(x*tile+2, y*tile+2, tile-4, tile-4);
+    }
+  }
+  ctx.strokeStyle = 'rgba(35,26,18,0.55)'; ctx.lineWidth = 3;
+  for(let i=0;i<=6;i++){
+    ctx.beginPath(); ctx.moveTo(i*tile,0); ctx.lineTo(i*tile,size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i*tile); ctx.lineTo(size,i*tile); ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set((WORLD.maxX+20)/4.5, (WORLD.maxZ+20)/4.5);
+  return tex;
+}
+const matFloorHall  = new THREE.MeshStandardMaterial({ map:makeStoneFloorTexture(), color:0xffffff, roughness:0.92 });
+const matFloorWood  = new THREE.MeshStandardMaterial({ color:0x5b4230, roughness:0.85 });
+const matWall       = new THREE.MeshStandardMaterial({ color:0x2a2521, roughness:0.9 });
+const matWood       = new THREE.MeshStandardMaterial({ color:0x6b4a30, roughness:0.7 });
+const matWoodDark   = new THREE.MeshStandardMaterial({ color:0x3d2a1c, roughness:0.75 });
+const matMetal      = new THREE.MeshStandardMaterial({ color:0x8a8f92, roughness:0.35, metalness:0.7 });
+const matFoliage    = new THREE.MeshStandardMaterial({ color:0x33502f, roughness:0.9 });
+const matRug        = new THREE.MeshStandardMaterial({ color:0x7a3f34, roughness:1 });
+const matCushionArr = [0xb5502e,0xd99a45,0x5c7a52,0xc4433c,0xdccf8f].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:0.9}));
+const matChairArr = [0x2f3a2c,0x1c1a17,0x33402f,0x211d18].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:0.55}));
+
+function box(w,h,d,mat){ return new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat); }
+function cyl(r,h,mat,seg=16){ return new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,seg), mat); }
+
+// -- Suelo general (tarima de piedra clara del salón + patio exterior) --
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.maxX+20, WORLD.maxZ+20), matFloorHall);
+floor.rotation.x = -Math.PI/2;
+floor.position.set(WORLD.maxX/2, 0, WORLD.maxZ/2);
+floor.receiveShadow = true;
+scene.add(floor);
+
+// -- Paredes perimetrales + pared interna de la cocina --
+function wallSeg(x,z,w,d,h=3.2){
+  const m = box(w,h,d, matWall);
+  m.position.set(x,h/2,z);
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m);
+  registerCollider(x,z,w,d);
+}
+// perímetro cerrado por completo: el único hueco es la entrada al frente,
+// sin hoja de puerta. Antes las paredes laterales se cortaban a mitad de
+// camino y dejaban ver el fondo negro detrás de baños/túnel y del rincón
+// izquierdo; ahora corren de punta a punta del edificio.
+const ENTRANCE_MIN = 16.5, ENTRANCE_MAX = 29.5; // hueco de entrada, abierto, sin puerta
+wallSeg(WORLD.maxX/2, 0.0, WORLD.maxX+0.6, 0.6);                     // pared trasera (fondo, z=0)
+wallSeg(0.0, WORLD.maxZ/2, 0.6, WORLD.maxZ+0.6);                     // pared izquierda, a todo lo largo
+wallSeg(WORLD.maxX-0.15, WORLD.maxZ/2, 0.3, WORLD.maxZ+0.6);         // pared derecha, a todo lo largo (cierra baños y túnel)
+wallSeg((0+ENTRANCE_MIN)/2, WORLD.maxZ-0.15, ENTRANCE_MIN, 0.3);           // frente, ala izq
+wallSeg((ENTRANCE_MAX+WORLD.maxX)/2, WORLD.maxZ-0.15, WORLD.maxX-ENTRANCE_MAX, 0.3); // frente, ala der (deja el hueco de entrada)
+// muro que separa la cocina del salón, con una puerta real de paso para meseros/cocineros
+wallSeg(15.15, 4.0, 0.3, 6);     // z: 1  -> 7
+wallSeg(15.15, 10.5, 0.3, 3);    // z: 9  -> 12   (deja vano exacto z 7-9, sin grietas)
+// muro que cierra la cocina por abajo (frente a Venta de Flores), con puerta de servicio
+wallSeg(4.75, 12.15, 9.5, 0.3);  // x: 0    -> 9.5
+wallSeg(12.75, 12.15, 4.5, 0.3); // x: 10.5 -> 15   (deja vano exacto x 9.5-10.5, sin grietas)
+
+/* -- Puertas reales (hojas batientes tipo "vaivén" de cocina) --
+   Antes las dos hojas de cada puerta compartían el mismo punto central del
+   vano (el punto exacto por donde caminan los mozos), y la hoja quedaba
+   perpendicular a la pared que debía tapar: por eso la puerta "no
+   funcionaba" y el personal parecía trabado dentro de ella. Ahora cada
+   hoja tiene su bisagra en el poste real del vano (el borde de la pared) y
+   se abre hacia el pasillo, lejos del punto por donde se camina. */
+function swingDoor(hingeX, hingeZ, closedYaw, hingeSide=1, w=1.0, h=1.9, openAngle=0.55, color=0x4a2f1e){
+  const doorMat = new THREE.MeshStandardMaterial({ color, roughness:0.55 });
+  const g = new THREE.Group();
+  const leaf = box(w,h,0.06, doorMat);
+  leaf.position.set(w/2, h/2, 0); // la hoja cuelga desde la bisagra (origen local) hacia adelante
+  const window_ = box(w*0.4,h*0.32,0.07, new THREE.MeshStandardMaterial({color:0x2a231c,roughness:0.3,metalness:0.2,transparent:true,opacity:0.55}));
+  window_.position.set(w/2, h*0.62, 0.005);
+  leaf.add(window_);
+  g.add(leaf);
+  g.position.set(hingeX, 0.02, hingeZ);
+  g.rotation.y = closedYaw + hingeSide*openAngle;
+  scene.add(g);
+  return g;
+}
+// puerta cocina -> salón: vano en la pared x=15.15, entre z=7 y z=9.
+// bisagra en cada poste del vano, hoja mirando hacia el centro cuando está cerrada.
+swingDoor(15.15, 7.0, -Math.PI/2,  1, 1.0, 1.9, 0.5);
+swingDoor(15.15, 9.0,  Math.PI/2, -1, 1.0, 1.9, 0.5);
+// puerta de servicio cocina -> venta de flores: vano en la pared z=12.15, entre x=9.5 y x=10.5
+swingDoor(9.5,  12.15, 0,        1, 0.5, 2.0, 0.4);
+swingDoor(10.5, 12.15, Math.PI, -1, 0.5, 2.0, 0.4);
+
+/* --- Cocina (arriba-izquierda) --- */
+(function kitchen(){
+  const c1 = box(9,1.0,1.1, matMetal); c1.position.set(6,0.5,2.2); scene.add(c1); registerCollider(6,2.2,9,1.1);
+  const c2 = box(5,1.0,1.1, matMetal); c2.position.set(11.5,0.5,4.6); scene.add(c2); registerCollider(11.5,4.6,5,1.1);
+  const stove = box(2.2,1.0,1.1, new THREE.MeshStandardMaterial({color:0x1c1c1c,roughness:0.4,metalness:0.6}));
+  stove.position.set(3.2,0.5,4.6); scene.add(stove); registerCollider(3.2,4.6,2.2,1.1);
+  addWarmLight(3.2,1.3,4.6,0.8,4,0xff7744);
+  const island = box(4.5,0.95,2.0, matWoodDark); island.position.set(8,0.475,8.4); scene.add(island); registerCollider(8,8.4,4.5,2.0);
+  const shelf = box(6,2.4,0.4, matWoodDark); shelf.position.set(4,1.2,0.6); scene.add(shelf); registerCollider(4,0.6,6,0.4);
+  addWarmLight(7,2.6,6,0.7,8);
+})();
+
+/* --- Venta de Flores --- */
+(function flowerShop(){
+  const counter = box(8,1.0,1.3, matWoodDark); counter.position.set(5.5,0.5,15.4); counter.rotation.y=0.05;
+  scene.add(counter); registerCollider(5.5,15.4,8,1.4);
+  const rack = box(7,2.0,0.6, matWoodDark); rack.position.set(5.5,1.0,17.6); scene.add(rack); registerCollider(5.5,17.6,7,0.7);
+  const flowerColors = [0xdb5b7a,0xe8b74a,0xffffff,0xb0538c,0xe0713a,0x8f6bc9];
+  for(let i=0;i<24;i++){
+    const c = flowerColors[i%flowerColors.length];
+    const stem = cyl(0.03,0.35, matFoliage, 6);
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,8), new THREE.MeshStandardMaterial({color:c,roughness:0.8}));
+    const gx = 2.2 + (i%8)*1.1, gz = 15.0 + Math.floor(i/8)*0.7;
+    stem.position.set(gx, 0.7+0.18, gz); bloom.position.set(gx,0.7+0.36,gz);
+    scene.add(stem); scene.add(bloom);
+  }
+  addWarmLight(5.5,1.8,15.4,0.7,6);
+})();
+
+/* --- Pinta tu Maceta (mostrador izquierdo, con piezas exhibidas) --- */
+(function ceramicCounterLeft(){
+  const counter = box(7,0.95,1.2, matWoodDark); counter.position.set(5,0.475,21.6);
+  scene.add(counter); registerCollider(5,21.6,7,1.3);
+  const potColors = [0xd7c49a,0x6d8f6a,0xb85c4a,0xd9ae5a,0x7c95ab];
+  for(let i=0;i<14;i++){
+    const p = cyl(0.14,0.22, new THREE.MeshStandardMaterial({color:potColors[i%potColors.length],roughness:0.7}), 10);
+    p.position.set(2.2+(i%7)*0.9, 0.475+0.5+0.11, 21.1+Math.floor(i/7)*1.0);
+    scene.add(p);
+  }
+  for(let i=0;i<3;i++){
+    const stool = cyl(0.2,0.72, matWood, 10);
+    stool.position.set(2.5+i*2, 0.36, 23.4); scene.add(stool); registerCollider(2.5+i*2,23.4,0.5,0.5);
+  }
+  addWarmLight(5,1.6,21.6,0.6,5);
+})();
+
+/* --- Rincón lounge izquierdo (alfombra + sillones oscuros) --- */
+(function loungeLeft(){
+  const rug = cyl(3.0,0.02, matRug, 24); rug.position.set(5.5,0.01,27.2); scene.add(rug);
+  const seats = [[3.0,26.0],[8.0,26.0],[5.5,29.0]];
+  seats.forEach(([x,z])=>{
+    const arm = box(1.1,0.7,1.1, matWoodDark); arm.position.set(x,0.35,z); scene.add(arm); registerCollider(x,z,1.1,1.1);
+  });
+  const table = cyl(0.6,0.4, matWood, 16); table.position.set(5.5,0.2,27.2); scene.add(table); registerCollider(5.5,27.2,1.3,1.3);
+  addWarmLight(5.5,1.2,27.2,0.6,5);
+})();
+
+/* --- Mesa central de cerámica "Pinta tu Maceta" (mesa larga + banca) --- */
+function longWorkTable(x,z, w=7, label=true){
+  const rug = box(w+1.6,0.02,3.2, matRug); rug.position.set(x,0.011,z); scene.add(rug);
+  const table = box(w,0.9,1.3, matWood); table.position.set(x,0.45,z); scene.add(table); registerCollider(x,z,w,1.3);
+  const bench = box(w-1,0.45,0.5, matWoodDark); bench.position.set(x,0.225,z+1.05); scene.add(bench); registerCollider(x,z+1.05,w-1,0.5);
+  for(let i=0;i<5;i++){
+    const chair = box(0.5,0.85,0.5, matWoodDark); chair.position.set(x-w/2+1+i*(w-2)/4,0.425,z-1.0); scene.add(chair); registerCollider(x-w/2+1+i*(w-2)/4,z-1.0,0.5,0.5);
+  }
+  addWarmLight(x,1.6,z,0.7,6);
+  return { x, z, seatZ:z-1.0, w };
+}
+const centralWorkTable = longWorkTable(22,14);
+
+/* --- Salón: banca-sofá bajo la pared del fondo --- */
+(function boothBench(){
+  const bench = box(16,0.55,1.1, matWoodDark); bench.position.set(24,0.275,1.7); scene.add(bench); registerCollider(24,1.7,16,1.1);
+  for(let i=0;i<8;i++){
+    const cush = box(1.7,0.28,0.9, matCushionArr[i%matCushionArr.length]);
+    cush.position.set(16.5+i*2.0, 0.62, 1.7); scene.add(cush);
+  }
+  for(let i=0;i<7;i++){
+    const table = cyl(0.55,0.42, matWoodDark, 14); table.position.set(17.5+i*2.0,0.21,3.6);
+    scene.add(table); registerCollider(17.5+i*2.0,3.6,1.1,0.8);
+  }
+})();
+
+/* --- Mesas del salón (4-tops con sillas) --- */
+const diningTables = [];
+function diningTable(x,z, seats=4){
+  const rug = cyl(1.5,0.02, matRug, 20); rug.position.set(x,0.011,z); scene.add(rug);
+  const table = box(1.5,0.75,0.95, matWood); table.position.set(x,0.375,z); scene.add(table); registerCollider(x,z,1.6,1.05);
+  const chairPos = [[0,-1.05],[0,1.05],[-1.05,0],[1.05,0]].slice(0,seats);
+  const chairs = chairPos.map(([dx,dz],ci)=>{
+    const ch = box(0.5,0.85,0.5, matChairArr[ci%matChairArr.length]); ch.position.set(x+dx,0.425,z+dz);
+    ch.rotation.y = Math.atan2(-dx,-dz);
+    scene.add(ch);
+    const collider = registerCollider(x+dx,z+dz,0.55,0.55);
+    return { x:x+dx, z:z+dz, collider };
+  });
+  addWarmLight(x,1.7,z,0.55,5);
+  // florero pequeño en el centro de la mesa
+  const vase = cyl(0.05,0.12, new THREE.MeshStandardMaterial({color:0xcbb98f,roughness:0.6}), 8);
+  vase.position.set(x,0.75+0.06,z); scene.add(vase);
+  const vaseFlowerColors=[0xdb5b7a,0xe8b74a,0x8f6bc9];
+  for(let k=0;k<3;k++){
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.045,6,6), new THREE.MeshStandardMaterial({color:vaseFlowerColors[k%3]}));
+    bloom.position.set(x+(Math.random()-0.5)*0.1, 0.75+0.16+Math.random()*0.05, z+(Math.random()-0.5)*0.1);
+    scene.add(bloom);
+  }
+  diningTables.push({x,z,chairs});
+}
+diningTable(19,6);
+diningTable(25,6);
+diningTable(19,10);
+diningTable(25,10);
+diningTable(31,6,4);
+
+/* --- Rincón redondo con alfombra (arriba-derecha del salón) --- */
+(function roundLoungeTopRight(){
+  const rug = cyl(2.6,0.02, matRug, 24); rug.position.set(31,0.011,3.5); scene.add(rug);
+  const table = cyl(0.9,0.4, matWood, 16); table.position.set(31,0.2,3.5); scene.add(table); registerCollider(31,3.5,2.0,2.0);
+  const chairAngles = [0,1.05,2.1,3.15,4.2,5.25];
+  chairAngles.forEach(a=>{
+    const ch = box(0.55,0.85,0.55, matWoodDark);
+    ch.position.set(31+Math.cos(a)*1.7,0.425,3.5+Math.sin(a)*1.7);
+    scene.add(ch);
+  });
+  addWarmLight(31,1.6,3.5,0.6,6);
+})();
+
+/* --- Rincón de Merienda: un sillón curvo con mesa baja para sentarse
+   a tomar la merienda, en vez de una escalinata sin sentido --- */
+(function snackNook(){
+  const cx=37.5, cz=13;
+  const rug = cyl(3.3,0.02, matRug, 28); rug.position.set(cx,0.011,cz); scene.add(rug);
+  // sillón curvo armado con segmentos de banco alrededor de la mesa
+  const segAngles = [-1.15,-0.58,0,0.58,1.15, Math.PI-1.15,Math.PI-0.58,Math.PI,Math.PI+0.58,Math.PI+1.15];
+  segAngles.forEach(a=>{
+    const seg = box(1.15,0.6,0.85, new THREE.MeshStandardMaterial({color:0x4a5c40,roughness:0.85}));
+    seg.position.set(cx+Math.cos(a)*2.1, 0.3, cz+Math.sin(a)*2.1);
+    seg.rotation.y = -a;
+    scene.add(seg); registerCollider(cx+Math.cos(a)*2.1, cz+Math.sin(a)*2.1, 1.2,0.9);
+    const cush = box(1.1,0.18,0.8, matCushionArr[Math.floor(Math.random()*matCushionArr.length)]);
+    cush.position.set(seg.position.x,0.63,seg.position.z); cush.rotation.y=seg.rotation.y; scene.add(cush);
+  });
+  const table = cyl(0.85,0.42, matWood, 20); table.position.set(cx,0.21,cz); scene.add(table); registerCollider(cx,cz,1.9,1.9);
+  // tetera y tazas para la merienda
+  const teapot = cyl(0.14,0.16, new THREE.MeshStandardMaterial({color:0xdad2c0,roughness:0.4}), 10);
+  teapot.position.set(cx-0.2,0.42+0.08,cz); scene.add(teapot);
+  for(let i=0;i<3;i++){
+    const cup = cyl(0.06,0.06, new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.3}), 10);
+    cup.position.set(cx+0.25+i*0.22,0.42+0.03,cz-0.15+i*0.1); scene.add(cup);
+  }
+  // macetas con flores alrededor, para dar color al rincón
+  [[34.3,10.2],[40.7,10.2],[34.3,15.8],[40.7,15.8]].forEach(([x,z])=>{
+    const pot = cyl(0.32,0.55, matWoodDark, 10); pot.position.set(x,0.275,z); scene.add(pot); registerCollider(x,z,0.7,0.7);
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.48,10,10), matFoliage); bush.position.set(x,0.85,z); scene.add(bush);
+    const flowerColors=[0xdb5b7a,0xe8b74a,0x8f6bc9];
+    for(let k=0;k<4;k++){
+      const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.07,6,6), new THREE.MeshStandardMaterial({color:flowerColors[k%3]}));
+      bloom.position.set(x+(Math.random()-0.5)*0.5,1.0+Math.random()*0.2,z+(Math.random()-0.5)*0.5);
+      scene.add(bloom);
+    }
+  });
+  addWarmLight(cx,1.6,cz,0.65,7);
+})();
+
+/* --- Túnel de acceso y exhibición (arcos florales apuntando hacia arriba,
+   con plantas para fotos y un espejo decorativo al final) --- */
+(function tunnel(){
+  const torusMat = new THREE.MeshStandardMaterial({ color:0x30281f, roughness:0.6 });
+  const R = 2.1;
+  for(let i=0;i<7;i++){
+    const z = 2 + i*3.2;
+    // semicírculo apuntando hacia arriba (arco real, no invertido): apoya
+    // sus dos "patas" en el piso (y=0) y sube hasta la cima a y=R. Antes el
+    // pivote del grupo estaba en y=R, así que el arco entero flotaba a esa
+    // altura sin tocar el piso; ahora el pivote queda en y=0 (las dos
+    // "patas" del semicírculo caen justo en el piso).
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(R,0.07,8,24,Math.PI), torusMat);
+    arch.position.set(43, 0, z);
+    scene.add(arch);
+    // los pilares reales están en los extremos del arco (x=43-R y x=43+R), no en el medio del paso
+    registerCollider(43-R, z, 0.35, 0.35);
+    registerCollider(43+R, z, 0.35, 0.35);
+    addBulb(43-R, 1.1, z, 0.05);
+    addBulb(43+R, 1.1, z, 0.05);
+    addBulb(43, R-0.1, z, 0.05); // foquito en la cima del arco
+    if(i%2===0) addWarmLight(43, R*0.75, z, 0.6, 5, 0xffc98a);
+    // follaje/guirnalda floral trepando sobre el arco
+    const vine = new THREE.Mesh(new THREE.TorusGeometry(R,0.16,8,24,Math.PI), matFoliage);
+    vine.position.set(43, 0, z);
+    scene.add(vine);
+    // macetas con plantas a cada lado, ideales para sacarse fotos
+    [[43-R,0.35],[43+R,-0.35]].forEach(([px,dz])=>{
+      const pot = cyl(0.32,0.55, matWoodDark, 12); pot.position.set(px,0.275,z+dz); scene.add(pot);
+      registerCollider(px,z+dz,0.7,0.7);
+      const bush = new THREE.Mesh(new THREE.SphereGeometry(0.5,10,10), matFoliage);
+      bush.position.set(px,0.85,z+dz); scene.add(bush);
+      const flowerColors=[0xdb5b7a,0xe8b74a,0x8f6bc9,0xffffff];
+      for(let k=0;k<5;k++){
+        const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.08,6,6), new THREE.MeshStandardMaterial({color:flowerColors[k%4]}));
+        bloom.position.set(px+(Math.random()-0.5)*0.6, 1.05+Math.random()*0.25, z+dz+(Math.random()-0.5)*0.6);
+        scene.add(bloom);
+      }
+    });
+  }
+  // Antes había un espejo enmarcado (madera oscura + vidrio) parado justo
+  // en el paso del túnel: de lejos se veía como una pared/puerta marrón
+  // con negro tapando el medio del corredor. Se quitó por completo (marco,
+  // vidrio y su colisionador) para dejar el túnel abierto de punta a
+  // punta; se conserva la luz cálida y las macetas del final como cierre.
+  const mirrorZ = 2 + 7*3.2 - 1.2;
+  addWarmLight(43,2.3,mirrorZ-0.6,0.6,5,0xfff2da);
+  // un par de macetas con flores marcando el final del túnel
+  [[41.8,mirrorZ-0.9],[44.2,mirrorZ-0.9]].forEach(([px,pz])=>{
+    const pot = cyl(0.3,0.5, matWoodDark, 12); pot.position.set(px,0.25,pz); scene.add(pot);
+    registerCollider(px,pz,0.65,0.65);
+    const bush = new THREE.Mesh(new THREE.SphereGeometry(0.45,10,10), matFoliage); bush.position.set(px,0.75,pz); scene.add(bush);
+  });
+})();
+
+/* --- Baños: dos cuartos totalmente cerrados, separados por un muro
+   propio, cada uno con su puerta independiente, un lavamanos y un
+   inodoro. La pared trasera perimetral (z=0) ya cierra el fondo. --- */
+function toilet(x,z,rotY=0){
+  const g = new THREE.Group();
+  const porcelain = new THREE.MeshStandardMaterial({ color:0xf2efe7, roughness:0.3 });
+  const tank = box(0.42,0.42,0.18, porcelain); tank.position.set(0,0.75,-0.18); g.add(tank);
+  const bowlBase = cyl(0.16,0.4, porcelain, 12); bowlBase.position.set(0,0.2,0); g.add(bowlBase);
+  const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.24,0.08,16), porcelain);
+  seat.position.set(0,0.42,0.02); g.add(seat);
+  g.position.set(x,0,z); g.rotation.y = rotY;
+  scene.add(g);
+  registerCollider(x,z,0.55,0.55);
+}
+function sink(x,z,rotY=0){
+  const g = new THREE.Group();
+  const porcelain = new THREE.MeshStandardMaterial({ color:0xd8d3c8, roughness:0.35 });
+  const basin = box(0.7,0.15,0.5, porcelain); basin.position.set(0,0.85,0); g.add(basin);
+  const pedestal = cyl(0.12,0.8, porcelain, 10); pedestal.position.set(0,0.42,0); g.add(pedestal);
+  const mirror = new THREE.Mesh(new THREE.PlaneGeometry(0.55,0.6), new THREE.MeshStandardMaterial({color:0xdfe7ea,metalness:0.9,roughness:0.1}));
+  mirror.position.set(0,1.35,-0.02); g.add(mirror);
+  g.position.set(x,0,z); g.rotation.y = rotY;
+  scene.add(g);
+  registerCollider(x,z,0.85,0.65);
+}
+function bathroomDoor(x,z,rotY){
+  const doorMat = new THREE.MeshStandardMaterial({ color:0x3d2a1c, roughness:0.55 });
+  const leaf = box(1.1,2.0,0.06, doorMat);
+  const g = new THREE.Group(); g.add(leaf); leaf.position.x = 0.55;
+  g.position.set(x, 1.0, z); g.rotation.y = rotY;
+  scene.add(g);
+}
+function bathroom(x0,x1,z0,z1,doorX,label){
+  const w = x1-x0, cx = (x0+x1)/2, cz=(z0+z1)/2;
+  // paredes laterales (izq/der) y pared trasera — cierran completamente el cuarto
+  wallSeg(x0, cz, 0.25, z1-z0, 2.7);
+  wallSeg(x1, cz, 0.25, z1-z0, 2.7);
+  wallSeg(cx, z0, w, 0.25, 2.7);
+  // pared frontal (hacia el pasillo/lounge), con puerta
+  const doorHalf = 0.7;
+  wallSeg((x0+doorX-doorHalf)/2, z1, (doorX-doorHalf)-x0, 0.25, 2.7);
+  wallSeg((doorX+doorHalf+x1)/2, z1, x1-(doorX+doorHalf), 0.25, 2.7);
+  bathroomDoor(doorX-doorHalf, z1, Math.PI/2);
+  // artefactos
+  toilet(x0+0.75, z0+0.7, 0);
+  sink(cx+0.5, z0+0.65, 0);
+  addWarmLight(cx,2.2,cz,0.5,5,0xdfe8ff);
+}
+// Antes los baños se extendían hasta x=45.7, invadiendo el ancho real del
+// túnel (pilares/arcos en x≈41-45): por eso la sala de exhibición chocaba
+// contra ellos. Ahora quedan más chicos y terminan en x=39.8, dejando
+// todo el ancho del túnel (39.8 -> 46) libre.
+bathroom(34.3, 37.05, 1, 5.3, 35.675, 'Baño 1');
+bathroom(37.05, 39.8, 1, 5.3, 38.425, 'Baño 2');
+
+/* --- Recepción --- */
+const receptionDesk = (function reception(){
+  const backCounter = box(7,1.05,0.9, matWoodDark); backCounter.position.set(21.5,0.525,27.3);
+  scene.add(backCounter); registerCollider(21.5,27.3,7,0.9);
+  const curve = cyl(1.1,1.0, matWoodDark, 12); curve.scale.set(1,1,0.6);
+  curve.position.set(19.2,0.5,28.0); scene.add(curve); registerCollider(19.2,28.0,2.2,1.5);
+  const monitor = box(0.35,0.3,0.05, new THREE.MeshStandardMaterial({color:0x111111,emissive:0x224466,emissiveIntensity:0.6}));
+  monitor.position.set(21.7,1.15,27.0); scene.add(monitor);
+  const shelf = box(4,2.0,0.4, matWoodDark); shelf.position.set(24.5,1.0,25.4); scene.add(shelf); registerCollider(24.5,25.4,4,0.5);
+  addWarmLight(21.5,1.8,27.3,0.8,6);
+  // más luces cálidas y detalles lindos para que la recepción se sienta
+  // acogedora y no un mostrador pelado
+  addWarmLight(19.2,2.0,28.2,0.5,5,0xffcf9e);
+  addWarmLight(24.5,2.2,25.4,0.5,5,0xffcf9e);
+  // guirnalda de foquitos a lo largo del mostrador
+  for(let i=0;i<8;i++){ addBulb(18+i*1.0, 1.15, 26.9, 0.045); }
+  // jarrón con flores sobre el mostrador
+  const deskVase = cyl(0.07,0.16, new THREE.MeshStandardMaterial({color:0xcbb98f,roughness:0.6}), 10);
+  deskVase.position.set(20.2,1.05+0.08,27.15); scene.add(deskVase);
+  const deskFlowerColors=[0xdb5b7a,0xe8b74a,0x8f6bc9,0xffffff];
+  for(let k=0;k<5;k++){
+    const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.05,6,6), new THREE.MeshStandardMaterial({color:deskFlowerColors[k%4]}));
+    bloom.position.set(20.2+(Math.random()-0.5)*0.12, 1.05+0.2+Math.random()*0.06, 27.15+(Math.random()-0.5)*0.12);
+    scene.add(bloom);
+  }
+  // maceta con follaje al lado del mostrador curvo
+  const decoPot = cyl(0.28,0.5, matWoodDark, 12); decoPot.position.set(17.6,0.25,28.3); scene.add(decoPot);
+  registerCollider(17.6,28.3,0.65,0.65);
+  const decoBush = new THREE.Mesh(new THREE.SphereGeometry(0.42,10,10), matFoliage); decoBush.position.set(17.6,0.75,28.3); scene.add(decoBush);
+  // antes el punto de parada (20.2, 27.6) caía DENTRO de la caja del
+  // mostrador (x:18-25, z:26.85-27.75), por eso la recepcionista aparecía
+  // enterrada en el mueble. Ahora queda justo detrás del mostrador,
+  // mirando hacia la entrada, con los pies apoyados en el piso.
+  return { x:21.5, standZ:26.3, facing: 0 };
+})();
+
+/* --- Rincón lounge derecho (sillones verdes) --- */
+(function loungeRight(){
+  const rug = cyl(3.0,0.02, matRug, 24); rug.position.set(34.5,0.011,27.2); scene.add(rug);
+  const seats = [[32.2,26.0],[36.8,26.0],[34.5,29.2]];
+  seats.forEach(([x,z])=>{
+    const arm = box(1.1,0.75,1.1, new THREE.MeshStandardMaterial({color:0x35473a,roughness:0.85}));
+    arm.position.set(x,0.375,z); scene.add(arm); registerCollider(x,z,1.1,1.1);
+  });
+  const table = cyl(0.6,0.4, matWood, 16); table.position.set(34.5,0.2,27.2); scene.add(table); registerCollider(34.5,27.2,1.3,1.3);
+  addWarmLight(34.5,1.2,27.2,0.6,5);
+})();
+
+/* --- Techo sobre TODO el lugar (cocina, salón, flores, cerámica,
+   rincones, baños y túnel de exhibición incluidos). Antes solo cubría el
+   salón central y dejaba baños/túnel a cielo abierto (por eso se veía
+   fondo negro ahí arriba); ahora es una sola cubierta continua sobre todo
+   el edificio, por encima de la altura de los arcos del túnel. --- */
+(function roof(){
+  const roofMat = new THREE.MeshStandardMaterial({ color:0x14100c, roughness:0.95, side:THREE.DoubleSide });
+  const roofH = 3.9; // por encima de paredes, arcos del túnel y pórtico de entrada
+  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(WORLD.maxX+1, WORLD.maxZ+1), roofMat);
+  ceiling.rotation.x = Math.PI/2;
+  ceiling.position.set(WORLD.maxX/2, roofH, WORLD.maxZ/2);
+  scene.add(ceiling);
+  // vigas de madera vistas sobre todo el edificio, para que no se vea como una placa flotante lisa
+  const beamMat = matWoodDark;
+  for(let i=0;i<=9;i++){
+    const beam = box(0.22, 0.3, WORLD.maxZ, beamMat);
+    beam.position.set(1 + i*5, roofH-0.16, WORLD.maxZ/2);
+    scene.add(beam);
+  }
+  for(let i=0;i<=7;i++){
+    const beam = box(WORLD.maxX, 0.28, 0.22, beamMat);
+    beam.position.set(WORLD.maxX/2, roofH-0.16, 1 + i*5);
+    scene.add(beam);
+  }
+  // columnas de soporte discretas en las cuatro esquinas de todo el edificio
+  [[0.6,0.6],[WORLD.maxX-0.6,0.6],[0.6,WORLD.maxZ-0.6],[WORLD.maxX-0.6,WORLD.maxZ-0.6]].forEach(([x,z])=>{
+    const col = cyl(0.18, roofH, matWoodDark, 10); col.position.set(x,roofH/2,z); scene.add(col);
+  });
+})();
+
+/* --- Acceso / entrada con jardineras y pórtico principal --- */
+(function entrance(){
+  const path = box(4.5,0.05,6, new THREE.MeshStandardMaterial({color:0x777069,roughness:1}));
+  path.position.set(21.5,0.03,34); scene.add(path);
+  [[17.8,31.5],[25.2,31.5],[17.8,34.5],[25.2,34.5]].forEach(([x,z])=>{
+    const planter = box(1.4,0.7,0.8, matWoodDark); planter.position.set(x,0.35,z); scene.add(planter); registerCollider(x,z,1.4,0.8);
+    const foliage = new THREE.Mesh(new THREE.SphereGeometry(0.55,8,8), matFoliage); foliage.position.set(x,0.9,z); scene.add(foliage);
+    // florcitas de bienvenida en las jardineras
+    const flowerColors=[0xdb5b7a,0xe8b74a,0x8f6bc9,0xffffff];
+    for(let k=0;k<5;k++){
+      const bloom = new THREE.Mesh(new THREE.SphereGeometry(0.07,6,6), new THREE.MeshStandardMaterial({color:flowerColors[k%4]}));
+      bloom.position.set(x+(Math.random()-0.5)*0.9, 1.05+Math.random()*0.2, z+(Math.random()-0.5)*0.5);
+      scene.add(bloom);
+    }
+    addBulb(x,1.5,z,0.05);
+  });
+  // farol de bienvenida
+  addWarmLight(21.5,1.6,33,0.7,6);
+
+  // mamparas de vidrio que flanquean el camino de entrada (como en la foto):
+  // un paño de vidrio esmerilado sobre un zócalo de madera, con jardinera y
+  // farol arriba. Antes no había ninguna pared acá, solo las jardineras
+  // sueltas — esto era la "pared que falta" en el acceso.
+  const glassMat = new THREE.MeshStandardMaterial({ color:0xcdd8da, roughness:0.15, metalness:0.1, transparent:true, opacity:0.35 });
+  [[-1,19.3],[1,23.7]].forEach(([side,x])=>{
+    const plinth = box(0.22,0.35,3.2, matWoodDark); plinth.position.set(x,0.175,33); scene.add(plinth); registerCollider(x,33,0.3,3.2);
+    const glass = box(0.06,0.95,2.9, glassMat); glass.position.set(x,0.35+0.475,33); scene.add(glass); registerCollider(x,33,0.2,2.9);
+    const cap = box(0.28,0.08,3.3, matWoodDark); cap.position.set(x,0.35+0.95+0.04,33); scene.add(cap);
+    // jardinera y farol arriba del zócalo, en el extremo hacia la calle
+    const topPot = cyl(0.22,0.3, matWoodDark, 10); topPot.position.set(x,0.35+0.95+0.08+0.15,33-1.3); scene.add(topPot);
+    const topBush = new THREE.Mesh(new THREE.SphereGeometry(0.3,8,8), matFoliage); topBush.position.set(x,0.35+0.95+0.08+0.42,33-1.3); scene.add(topBush);
+    addBulb(x,0.35+0.95+0.15,33+1.3,0.05);
+  });
+
+  // pórtico principal: dos columnas + dintel con el nombre del café
+  const postMat = matWoodDark;
+  const postL = cyl(0.16,3.4, postMat, 10); postL.position.set(17.0,1.7,34.3); scene.add(postL); registerCollider(17.0,34.3,0.4,0.4);
+  const postR = cyl(0.16,3.4, postMat, 10); postR.position.set(26.0,1.7,34.3); scene.add(postR); registerCollider(26.0,34.3,0.4,0.4);
+  const lintel = box(9.4,0.3,0.3, postMat); lintel.position.set(21.5,3.35,34.3); scene.add(lintel);
+  // guirnalda de flores colgando del dintel
+  for(let i=0;i<12;i++){
+    const gx = 17.2 + i*0.78;
+    const foliageBit = new THREE.Mesh(new THREE.SphereGeometry(0.22,6,6), matFoliage);
+    foliageBit.position.set(gx, 3.1, 34.3); scene.add(foliageBit);
+    addBulb(gx, 3.0, 34.3, 0.035);
+  }
+  addWarmLight(21.5,3.0,34.3,0.5,6,0xffcf9a);
+})();
+
+// -- guirnaldas de luces cálidas a lo largo del salón (solo esferas emisivas, sin coste de luz real) --
+for(let i=0;i<18;i++){
+  addBulb(16 + (i%9)*2.2, 3.05, 1.3 + Math.floor(i/9)*15, 0.045);
+}
+addWarmLight(22,3.0,1.5,0.5,10,0xffcf9a);
+addWarmLight(28,3.0,1.5,0.5,10,0xffcf9a);
+addWarmLight(20,3.2,9,0.55,11,0xffcf9a);
+addWarmLight(28,3.2,9,0.55,11,0xffcf9a);
+addWarmLight(8,3.0,15,0.5,10,0xffcf9a);
+addWarmLight(22,3.0,20,0.5,10,0xffcf9a);
+addWarmLight(34,3.0,15,0.5,10,0xffcf9a);
+// -- luces extra en zonas que quedaban oscuras: los pasillos de cruce
+//    este/oeste del fondo del salón, el corredor frente a los baños, y el
+//    carril este junto a la recepción --
+addWarmLight(14,2.6,17,0.55,10,0xffcf9a);
+addWarmLight(28,2.6,17,0.55,10,0xffcf9a);
+addWarmLight(29,2.4,24,0.5,9,0xffcf9a);
+addWarmLight(37.5,2.4,6.2,0.5,7,0xffe0b0);
+addWarmLight(10,2.4,20,0.45,8,0xffcf9a);
+addWarmLight(29,2.4,32,0.5,8,0xffcf9a);
+
+/* ---------- 6. CONTROLES DEL JUGADOR ---------- */
+const player = { x:21.5, z:33, yaw:Math.PI, pitch:0, radius:0.32, speed:3.4 };
+const keys = {};
+document.addEventListener('keydown', e=>keys[e.code]=true);
+document.addEventListener('keyup', e=>keys[e.code]=false);
+
+const startScreen = document.getElementById('startScreen');
+let locked = false;
+startScreen.addEventListener('click', ()=>{ renderer.domElement.requestPointerLock(); });
+document.addEventListener('pointerlockchange', ()=>{
+  locked = document.pointerLockElement === renderer.domElement;
+  startScreen.classList.toggle('hidden', locked);
+});
+document.addEventListener('mousemove', e=>{
+  if(!locked) return;
+  player.yaw   -= e.movementX * 0.0022;
+  player.pitch -= e.movementY * 0.0022;
+  player.pitch = Math.max(-1.2, Math.min(1.2, player.pitch));
+});
+
+function updatePlayer(dt){
+  const forward = (keys['KeyW']?1:0) - (keys['KeyS']?1:0);
+  const strafe  = (keys['KeyA']?1:0) - (keys['KeyD']?1:0);
+  const slow = keys['ShiftLeft']||keys['ShiftRight'];
+  const spd = player.speed * (slow?0.45:1) * dt;
+  if(forward||strafe){
+    const len = Math.hypot(forward,strafe) || 1;
+    const fx = Math.sin(player.yaw), fz = Math.cos(player.yaw);
+    const rx = Math.sin(player.yaw+Math.PI/2), rz = Math.cos(player.yaw+Math.PI/2);
+    const dx = (-fx*forward + -rx*strafe)/len * spd;
+    const dz = (-fz*forward + -rz*strafe)/len * spd;
+    tryMove(player, dx, dz, player.radius);
+  }
+  camera.position.set(player.x, eyeHeight, player.z);
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = player.yaw;
+  camera.rotation.x = player.pitch;
+}
+
+const zoneNameEl = document.getElementById('zoneName');
+let zoneTimer = 0;
+
+/* ---------- 7. HUMANOIDES PROCEDURALES ---------- */
+function makeHuman(skin, shirt, pants, opts={}){
+  const g = new THREE.Group();
+  const mSkin = new THREE.MeshStandardMaterial({color:skin, roughness:0.9});
+  const mShirt= new THREE.MeshStandardMaterial({color:shirt, roughness:0.85});
+  const mPants= new THREE.MeshStandardMaterial({color:pants, roughness:0.85});
+
+  const hipY = 0.9;
+  const torso = box(0.38,0.5,0.22,mShirt); torso.position.y = hipY+0.28; g.add(torso);
+  const head  = new THREE.Mesh(new THREE.SphereGeometry(0.14,10,10), mSkin);
+  head.position.y = hipY+0.62; g.add(head);
+  if(opts.hat){
+    const hat = cyl(0.15,0.08, new THREE.MeshStandardMaterial({color:opts.hat,roughness:0.7}),10);
+    hat.position.y = hipY+0.74; g.add(hat);
+  }
+
+  const armGeo = new THREE.BoxGeometry(0.11,0.42,0.11);
+  const legGeo = new THREE.BoxGeometry(0.14,0.46,0.14);
+
+  function limb(geo, mat, x){
+    const pivot = new THREE.Group(); pivot.position.set(x, hipY+ (geo===armGeo?0.5:0.0), 0);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = -geo.parameters.height/2;
+    pivot.add(mesh); g.add(pivot); return pivot;
+  }
+  const armL = limb(armGeo, mShirt, -0.24);
+  const armR = limb(armGeo, mShirt, 0.24);
+  const legL = limb(legGeo, mPants, -0.11);
+  const legR = limb(legGeo, mPants, 0.11);
+  g.position.y = 0;
+  g.traverse(o=>{ if(o.isMesh){ o.castShadow=false; } });
+  return { group:g, armL, armR, legL, legR, head, walkPhase:Math.random()*10, idlePhase:Math.random()*10 };
+}
+
+function animateHuman(h, dt, walking, role){
+  if(walking){
+    h.walkPhase += dt*5.5;
+    const s = Math.sin(h.walkPhase);
+    h.legL.rotation.x = s*0.5; h.legR.rotation.x = -s*0.5;
+    if(role!=='waiter'){ h.armL.rotation.x = -s*0.35; h.armR.rotation.x = s*0.35; }
+    else { h.armR.rotation.x = -1.9; h.armL.rotation.x = -s*0.2; } // brazo con la bandeja, casi fijo
+  } else {
+    h.legL.rotation.x *= 0.85; h.legR.rotation.x *= 0.85;
+    h.idlePhase += dt;
+    if(role==='cook_watch'){
+      // parado frente a la hornalla, mirando el horno, revolviendo apenas
+      h.armR.rotation.x = -0.75 + Math.sin(h.idlePhase*2.2)*0.1;
+      h.armL.rotation.x = -0.55;
+      h.head.rotation.x = 0.25;
+    } else if(role==='cook_knead'){
+      // amasando sobre la mesada: los dos brazos empujan hacia abajo/adelante en fase
+      const knead = Math.sin(h.idlePhase*4.2)*0.35;
+      h.armR.rotation.x = -0.95 + knead;
+      h.armL.rotation.x = -0.95 - knead*0.3;
+      h.head.rotation.x = 0.35;
+    } else if(role==='ceramist'){
+      h.armR.rotation.x = -1.1 + Math.sin(h.idlePhase*3)*0.12;
+      h.armL.rotation.x = -1.0 + Math.sin(h.idlePhase*3+1)*0.12;
+      h.legL.rotation.x = -1.3; h.legR.rotation.x = -1.3; // sentado en el taburete/silla
+    } else if(role==='receptionist'){
+      h.head.rotation.y = Math.sin(h.idlePhase*0.5)*0.5;
+      h.armL.rotation.x = -1.3; h.armR.rotation.x = -1.3 + Math.sin(h.idlePhase*2)*0.1;
+    } else if(role==='seated'){
+      h.armR.rotation.x = -1.0 + Math.sin(h.idlePhase*0.8)*0.2;
+      h.armL.rotation.x = -0.9 + Math.sin(h.idlePhase*0.8+2)*0.15;
+      h.head.rotation.y = Math.sin(h.idlePhase*0.3)*0.3;
+      h.legL.rotation.x = -1.3; h.legR.rotation.x = -1.3; // sentado en la silla, sin flotar
+    } else if(role==='browsing'){
+      // cliente que se levantó y ahora mira flores/cerámica de pie
+      h.armL.rotation.x = -0.5 + Math.sin(h.idlePhase*0.6)*0.15;
+      h.armR.rotation.x = -0.45 + Math.sin(h.idlePhase*0.6+1.5)*0.15;
+      h.head.rotation.y = Math.sin(h.idlePhase*0.4)*0.4;
+    } else {
+      h.armL.rotation.x *= 0.9; h.armR.rotation.x *= 0.9;
+    }
+  }
+}
+
+function seatHuman(h, seatTopY){
+  // baja la cadera del muñeco a la altura real del asiento (silla/taburete)
+  // y dobla las piernas hacia adelante para que se vea sentado, no flotando.
+  h.group.position.y = seatTopY - 0.9;
+  h.legL.rotation.x = -1.3; h.legR.rotation.x = -1.3;
+}
+
+/* ---------- 9. GRAFO DE NAVEGACIÓN (waypoints = navmesh simplificado) ----------
+   Nodos ubicados en los pasillos reales del salón (verificados contra las
+   cajas de colisión de mesas/mostradores) para que los meseros nunca
+   atraviesen mobiliario. */
+const NAV = {
+  kitchenDoor: {x:16.6, z:8},
+  aisleA:      {x:20,   z:8},
+  aisleC:      {x:28,   z:8},
+  // antes estos puntos caían prácticamente encima de una silla (a menos de
+  // su radio de colisión), así que el que se acercaba nunca llegaba a los
+  // 0.12/0.15 de "llegada" y se quedaba caminando en el lugar para
+  // siempre. Ahora quedan con margen real más allá de cada silla.
+  tableApproach:[
+    {x:19,z:8.0},{x:25,z:8.0},{x:19,z:12.0},{x:25,z:12.0},{x:31,z:8.0}
+  ],
+  // un solo pasillo de cruce este-oeste (z=17), verificado libre de mesas,
+  // mostradores y bancos, en vez de varios nodos sueltos sin comprobar.
+  crossEast:   {x:28, z:17},
+  crossWest:   {x:14, z:17},
+  toCeramic:   {x:8,  z:23.6},
+  toFlowers:   {x:6,  z:16.6},
+  // carril este (x=29), libre de punta a punta entre el mostrador de
+  // recepción y el rincón lounge derecho, hasta la vereda de entrada.
+  exitOutside: {x:29, z:35.5},
+};
+
+// Construye el recorrido que hace un cliente al levantarse de una mesa
+// (índices 0-1 = mesas del fondo z=6, resto ya está cerca del cruce este).
+function customerLeavePath(tableIdx, destKind){
+  const approach = NAV.tableApproach[tableIdx];
+  const toCross = (tableIdx===0||tableIdx===1)
+    ? [approach, NAV.aisleA, NAV.aisleC, NAV.crossEast]
+    : [approach, NAV.crossEast];
+  if(destKind==='ceramic') return [...toCross, NAV.crossWest, NAV.toCeramic];
+  if(destKind==='flowers') return [...toCross, NAV.crossWest, NAV.toFlowers];
+  return [...toCross, NAV.exitOutside]; // 'exit'
+}
+function customerArrivePath(tableIdx){
+  return [NAV.exitOutside, NAV.crossEast,
+          ...((tableIdx===0||tableIdx===1) ? [NAV.aisleC, NAV.aisleA] : []),
+          NAV.tableApproach[tableIdx]];
+}
+
+const npcs = [];
+function spawnNPC(human, path, role, speed=1.1){
+  human.group.position.set(path[0].x,0,path[0].z);
+  scene.add(human.group);
+  npcs.push({ human, path, idx:0, role, speed, waitT:0 });
+}
+
+// Recepcionista — fija tras el mostrador, parada, sin flotar y sin quedar
+// dentro del mueble (ver nota en reception()).
+{
+  const h = makeHuman(0xd8a878, 0x3a4a5a, 0x22262e);
+  const rx = receptionDesk.x, rz = receptionDesk.standZ;
+  h.group.position.set(rx, 0, rz);
+  h.group.rotation.y = receptionDesk.facing;
+  scene.add(h.group);
+  registerCollider(rx,rz,0.6,0.6);
+  npcs.push({ human:h, path:[{x:rx,z:rz}], idx:0, role:'receptionist', speed:0, waitT:0, stationary:true });
+}
+
+// Clientes — un "pool" de sillas compartido entre las 5 mesas (antes solo
+// se usaban 4 y la de 4 puestos quedaba siempre vacía). Al cargar se ocupan
+// algunas al azar; después de un rato cada cliente se levanta y se va (a la
+// salida, o a curiosear flores/cerámica); y cada tanto entra gente nueva por
+// la puerta y se sienta en una silla libre — así el lugar no se vacía nunca
+// del todo ni se queda siempre igual.
+const seatSkin = [0xd8a878,0xc48a5e,0xe0b898,0xb47850,0xdcb08a,0xc79a72];
+const seatShirt= [0x5c3a3a,0x3a5c4a,0x4a4a6c,0x7a5a3a,0x5c5c3a,0x3a5c5c];
+let sIdx=0;
+const chairPool = [];
+diningTables.forEach((t,tableIdx)=>{
+  t.chairs.forEach(ch=>{
+    chairPool.push({ x:ch.x, z:ch.z, tableIdx, tableX:t.x, tableZ:t.z, taken:false, collider:ch.collider, colliderActive:true });
+  });
+});
+
+function pickDest(){
+  const r = Math.random();
+  return r<0.55 ? 'exit' : (r<0.8 ? 'ceramic' : 'flowers');
+}
+function nextSkin(){ const s = [seatSkin[sIdx%6], seatShirt[sIdx%6]]; sIdx++; return s; }
+
+function spawnSeatedCustomer(seat, leaveAt){
+  const [skin, shirt] = nextSkin();
+  const h = makeHuman(skin, shirt, 0x2b2b2b);
+  h.group.position.set(seat.x,0,seat.z);
+  h.group.rotation.y = Math.atan2(seat.tableX-seat.x, seat.tableZ-seat.z);
+  seatHuman(h, 0.85);
+  scene.add(h.group);
+  seat.taken = true;
+  const destKind = pickDest();
+  npcs.push({
+    human:h, path:[{x:seat.x,z:seat.z}], idx:0, role:'seated',
+    speed: 1.0 + Math.random()*0.2, waitT:0, stationary:true,
+    customerState:'seated', leaveAt, leavePath:customerLeavePath(seat.tableIdx,destKind),
+    destKind, seat
+  });
+}
+chairPool.forEach((seat,i)=>{
+  if(Math.random() < 0.6) spawnSeatedCustomer(seat, 18 + Math.random()*35 + i*2.5);
+});
+
+function spawnArrivingCustomer(){
+  if(npcs.filter(n=>n.customerState).length > 16) return; // no amontonar de más
+  const free = chairPool.filter(s=>!s.taken);
+  if(free.length===0) return;
+  const seat = free[Math.floor(Math.random()*free.length)];
+  seat.taken = true;
+  const [skin, shirt] = nextSkin();
+  const h = makeHuman(skin, shirt, 0x2b2b2b);
+  const arrivePath = customerArrivePath(seat.tableIdx);
+  h.group.position.set(arrivePath[0].x,0,arrivePath[0].z);
+  h.group.rotation.y = Math.PI;
+  scene.add(h.group);
+  npcs.push({
+    human:h, path:[...arrivePath.slice(1), {x:seat.x,z:seat.z}], idx:0, role:'visitor',
+    speed: 1.0 + Math.random()*0.15, waitT:0, stationary:false,
+    customerState:'arriving', destKind:pickDest(), seat
+  });
+}
+let arrivalTimer = 5 + Math.random()*5;
+
+// Cocineros — 2, entre isla y mesada
+{
+  // Cocinero 1: frente a la hornalla, vigilando el horno
+  const h1 = makeHuman(0xc99878,0xffffff,0x2b2b2b,{hat:0xffffff});
+  h1.group.position.set(3.2,0,3.55); h1.group.rotation.y = 0;
+  scene.add(h1.group);
+  registerCollider(3.2,3.55,0.6,0.6);
+  npcs.push({ human:h1, path:[{x:3.2,z:3.55}], idx:0, role:'cook_watch', speed:0, waitT:0, stationary:true });
+
+  // Cocinero 2: amasando sobre la mesada/isla de la cocina
+  const h2 = makeHuman(0xb27f5c,0xffffff,0x2b2b2b,{hat:0xffffff});
+  h2.group.position.set(8,0,7.05); h2.group.rotation.y = 0;
+  scene.add(h2.group);
+  registerCollider(8,7.05,0.6,0.6);
+  npcs.push({ human:h2, path:[{x:8,z:7.05}], idx:0, role:'cook_knead', speed:0, waitT:0, stationary:true });
+}
+
+// Ceramistas — 2, sentados de verdad: uno en el taburete del mostrador
+// izquierdo (el "asiento alejado" del mostrador), otro en la silla de la
+// mesa larga central.
+{
+  const stoolX = 4.5, stoolZ = 23.4, stoolTop = 0.72;
+  const h1 = makeHuman(0xd8b088,0x8a5a6c,0x40372c);
+  h1.group.position.set(stoolX,0,stoolZ); h1.group.rotation.y = Math.PI; // mirando al mostrador
+  seatHuman(h1, stoolTop);
+  scene.add(h1.group);
+  registerCollider(stoolX,stoolZ,0.6,0.6);
+  npcs.push({ human:h1, path:[{x:stoolX,z:stoolZ}], idx:0, role:'ceramist', speed:0, waitT:0, stationary:true });
+
+  const chairX = centralWorkTable.x-1.5, chairZ = centralWorkTable.seatZ, chairTop = 0.85;
+  const h2 = makeHuman(0xc79a72,0x6c8a5a,0x40372c);
+  h2.group.position.set(chairX,0,chairZ); h2.group.rotation.y = Math.PI;
+  seatHuman(h2, chairTop);
+  scene.add(h2.group);
+  registerCollider(chairX,chairZ,0.6,0.6);
+  npcs.push({ human:h2, path:[{x:chairX,z:chairZ}], idx:0, role:'ceramist', speed:0, waitT:0, stationary:true });
+}
+
+// Meseros — 3, patrullan cocina <-> mesas por el grafo de pasillos
+function waiterPath(target){
+  return [NAV.kitchenDoor, NAV.aisleA, target, NAV.aisleA, NAV.kitchenDoor];
+}
+{
+  const h1 = makeHuman(0xcaa07c,0x2b2b2b,0x1c1c1c);
+  spawnNPC(h1, waiterPath(NAV.tableApproach[0]), 'waiter', 1.3);
+  const h2 = makeHuman(0xb9835c,0x2b2b2b,0x1c1c1c);
+  spawnNPC(h2, waiterPath(NAV.tableApproach[3]), 'waiter', 1.15);
+  const h3 = makeHuman(0xdcb08e,0x2b2b2b,0x1c1c1c);
+  spawnNPC(h3, waiterPath(NAV.tableApproach[4]), 'waiter', 1.25);
+}
+
+// Ciclo de vida de un cliente: llega y se sienta -> sentado -> se levanta ->
+// camina a su destino -> se retira (desaparece) o se queda curioseando
+// (flores/cerámica) y después también se retira.
+function updateCustomer(n, dt){
+  if(n.customerState==='seated'){
+    n.leaveAt -= dt;
+    animateHuman(n.human, dt, false, 'seated');
+    if(n.leaveAt<=0){
+      n.customerState = 'walking';
+      n.stationary = false;
+      n.human.group.position.y = 0; // se pone de pie
+      n.human.legL.rotation.x = 0; n.human.legR.rotation.x = 0; // deja de estar sentado
+      // Libera la silla YA, incluyendo su colisionador físico: antes ese
+      // colisionador seguía existiendo justo debajo de la persona, y como
+      // ella estaba parada exactamente en su centro, cualquier paso que
+      // intentara dar volvía a chocar contra su propia silla — por eso se
+      // quedaba trabada ahí para siempre. Ahora se libera al levantarse y
+      // se vuelve a poner recién cuando la persona ya se alejó de verdad.
+      if(n.seat && n.seat.collider){ removeCollider(n.seat.collider); n.seat.collider=null; n.seat.colliderActive=false; }
+      if(n.seat){ n.seat.taken = false; n.restoreSeat = n.seat; }
+      n.path = n.leavePath; n.idx = 0;
+      n.stuckTime = 0;
+    }
+    return;
+  }
+  if(n.customerState==='arrived'){
+    n.browseT -= dt;
+    animateHuman(n.human, dt, false, 'browsing');
+    if(n.browseT<=0){
+      n.customerState = 'walking'; n.stationary = false; n.finalExit = true;
+      n.path = [NAV.crossWest, NAV.crossEast, NAV.exitOutside]; n.idx = 0; n.stuckTime = 0;
+    }
+    return;
+  }
+  // Restaura el colisionador de la silla que se acaba de dejar en cuanto
+  // la persona ya se alejó lo suficiente, para que la silla vuelva a ser
+  // sólida para el resto (jugador y decorado) sin volver a atraparla a ella.
+  if(n.restoreSeat){
+    const dxr = n.human.group.position.x - n.restoreSeat.x, dzr = n.human.group.position.z - n.restoreSeat.z;
+    if(dxr*dxr+dzr*dzr > 0.9*0.9){
+      n.restoreSeat.collider = registerCollider(n.restoreSeat.x, n.restoreSeat.z, 0.55, 0.55);
+      n.restoreSeat.colliderActive = true;
+      n.restoreSeat = null;
+    }
+  }
+  // 'arriving' (camina desde la puerta hacia su silla) o 'walking' (se retira)
+  const target = n.path[n.idx];
+  const dx = target.x - n.human.group.position.x;
+  const dz = target.z - n.human.group.position.z;
+  const dist = Math.hypot(dx,dz);
+  // umbral de llegada generoso + seguro anti-atasco: si un colisionador no
+  // deja acercarse más, después de ~1.2s de no avanzar igual se considera
+  // "llegado" a ese nodo en vez de quedar caminando en el lugar para siempre
+  // (la causa de la gente que se veía flotando/marchando sin moverse).
+  if(dist < 0.4 || n.stuckTime > 1.2){
+    n.stuckTime = 0;
+    if(n.idx === n.path.length-1){
+      if(n.customerState==='arriving'){
+        n.customerState = 'seated'; n.stationary = true;
+        n.human.group.rotation.y = Math.atan2(n.seat.tableX-n.human.group.position.x, n.seat.tableZ-n.human.group.position.z);
+        seatHuman(n.human, 0.85);
+        if(!n.seat.collider){ n.seat.collider = registerCollider(n.seat.x, n.seat.z, 0.55, 0.55); n.seat.colliderActive = true; }
+        n.leaveAt = 20 + Math.random()*35;
+        n.leavePath = customerLeavePath(n.seat.tableIdx, n.destKind);
+      } else if(n.finalExit || n.destKind==='exit'){
+        n.removeMe = true;
+        if(n.seat) n.seat.taken = false;
+      } else {
+        n.customerState = 'arrived'; n.stationary = true; n.browseT = 6 + Math.random()*8;
+        n.human.group.rotation.y += Math.PI;
+      }
+      return;
+    }
+    n.idx++;
+    return;
+  }
+  const nx = dx/dist, nz = dz/dist;
+  const step = n.speed*dt;
+  const px = n.human.group.position.x, pz = n.human.group.position.z;
+  tryMove(n.human.group.position, nx*step, nz*step, 0.3, n);
+  const moved = Math.hypot(n.human.group.position.x-px, n.human.group.position.z-pz);
+  n.stuckTime = moved < step*0.15 ? (n.stuckTime||0)+dt : 0;
+  n.human.group.rotation.y = Math.atan2(nx,nz);
+  animateHuman(n.human, dt, true, 'visitor');
+}
+
+function updateNPC(n, dt){
+  if(n.customerState){ updateCustomer(n, dt); return; }
+  if(n.stationary){ animateHuman(n.human, dt, false, n.role); return; }
+  const target = n.path[n.idx];
+  const dx = target.x - n.human.group.position.x;
+  const dz = target.z - n.human.group.position.z;
+  const dist = Math.hypot(dx,dz);
+  if(dist < 0.3 || n.stuckTime > 1.2){
+    n.stuckTime = 0;
+    if(n.waitT>0){ n.waitT -= dt; animateHuman(n.human, dt, false, n.role); return; }
+    n.idx = (n.idx+1) % n.path.length;
+    if(n.idx===2) n.waitT = 1.4 + Math.random()*1.2; // pausa "sirviendo" al llegar a la mesa
+    return;
+  }
+  const nx = dx/dist, nz = dz/dist;
+  const step = n.speed*dt;
+  const px = n.human.group.position.x, pz = n.human.group.position.z;
+  tryMove(n.human.group.position, nx*step, nz*step, 0.3, n);
+  const moved = Math.hypot(n.human.group.position.x-px, n.human.group.position.z-pz);
+  n.stuckTime = moved < step*0.15 ? (n.stuckTime||0)+dt : 0;
+  n.human.group.rotation.y = Math.atan2(nx,nz);
+  animateHuman(n.human, dt, true, n.role);
+}
+
+npcsRef = npcs;
+
+/* ---------- 10. BUCLE PRINCIPAL ---------- */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const t = clock.elapsedTime;
+
+  updatePlayer(dt);
+  npcs.forEach(n=>updateNPC(n,dt));
+  for(let i=npcs.length-1;i>=0;i--){
+    if(npcs[i].removeMe){ scene.remove(npcs[i].human.group); npcs.splice(i,1); }
+  }
+
+  arrivalTimer -= dt;
+  if(arrivalTimer<=0){ arrivalTimer = 7 + Math.random()*8; spawnArrivingCustomer(); }
+
+  flickerLights.forEach(f=>{ f.light.intensity = f.base * (0.85 + 0.15*Math.sin(t*3+f.phase) + 0.05*Math.sin(t*11+f.phase)); });
+
+  zoneTimer -= dt;
+  if(zoneTimer<=0){ zoneTimer = 0.4; zoneNameEl.textContent = zoneAt(player.x, player.z); }
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
